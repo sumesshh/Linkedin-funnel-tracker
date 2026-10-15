@@ -48,18 +48,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   '(per-employee numbers outside the sample limits), which '
                   'inflates the graph. Real weeks are not affected.',
                 ),
-                FilledButton.icon(
-                  onPressed: () async {
-                    var n = 0;
-                    final ok = await guard(context, () async {
-                      n = await repo.seedMockData();
-                    });
-                    if (ok && context.mounted) {
-                      showSuccess(context, 'Regenerated $n demo weeks');
-                    }
-                  },
-                  icon: const Icon(Icons.refresh, size: 18),
-                  label: const Text('Regenerate demo data'),
+                // Disabled while a run is in flight — this button and the
+                // one in Settings used to be clickable at the same time.
+                ValueListenableBuilder<bool>(
+                  valueListenable: repo.seeding,
+                  builder: (context, seeding, _) => FilledButton.icon(
+                    onPressed: seeding
+                        ? null
+                        : () async {
+                            var n = 0;
+                            final ok = await guard(context, () async {
+                              n = await repo.seedMockData();
+                            });
+                            if (ok && context.mounted) {
+                              showSuccess(context, 'Regenerated $n demo weeks');
+                            }
+                          },
+                    icon: seeding
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Icon(Icons.refresh, size: 18),
+                    label: Text(
+                        seeding ? 'Regenerating…' : 'Regenerate demo data'),
+                  ),
                 ),
               ],
             ),

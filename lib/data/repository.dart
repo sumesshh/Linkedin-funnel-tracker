@@ -15,7 +15,24 @@ class Repository extends ChangeNotifier {
   Repository._();
   static final instance = Repository._();
 
-  late final _db = FirebaseFirestore.instance;
+  late FirebaseFirestore _db = FirebaseFirestore.instance;
+
+  /// True while [seedMockData] is running. Both Generate buttons watch this
+  /// and disable themselves: two overlapping runs are what created 22
+  /// duplicate demo weeks in the first place.
+  final seeding = ValueNotifier<bool>(false);
+
+  /// Points the repository at a fake Firestore and clears cached state.
+  @visibleForTesting
+  void useFirestoreForTests(FirebaseFirestore db) {
+    _db = db;
+    employees = [];
+    weeks = [];
+    allWeeks = [];
+    entriesByWeek = {};
+    error = null;
+    seeding.value = false;
+  }
   CollectionReference<Map<String, dynamic>> get _employeesRef =>
       _db.collection('employees');
   CollectionReference<Map<String, dynamic>> get _weeksRef =>
@@ -213,43 +230,134 @@ class Repository extends ChangeNotifier {
 
   // ---------------------------------------------------------- sample data
 
-  /// Replaces any previous DEMO DATA with [months] of weekly demo entries
-  /// for every active employee, placed before the earliest real week.
-  /// Values come from [demoValues] (deterministic, within [demoRanges] per
-  /// employee per week). Demo weeks are tagged `mock: true`; real weeks and
-  /// their entries are never written to.
-  Future<int> seedMockData({int months = 5}) async {
+  /// Demo documents are keyed by the week they cover, so regenerating
+  /// overwrites the previous run instead of adding a second copy of it.
+  static const demoIdPrefix = 'demo_';
+
+  /// `demo_2026-10-05` for the week starting 5 Oct 2026. Built from the local
+  /// date parts, matching [weekStartKey].
+  static String demoWeekId(DateTime start) => '$demoIdPrefix'
+      '${start.year.toString().padLeft(4, '0')}-'
+      '${start.month.toString().padLeft(2, '0')}-'
+      '${start.day.toString().padLeft(2, '0')}';
+
+  /// Demo weeks written by the old generator, which used random document ids.
+  /// These are the ones that can duplicate, so the seed refuses to run until
+  /// the cleanup has removed them.
+  List<Week> get legacyDemoWeeks => [
+        for (final w in allWeeks)
+          if (w.isDemo && !w.id.startsWith(demoIdPrefix)) w,
+      ];
+
+  /// Duplicate demo documents the UI is hiding (see [hiddenDuplicates]).
+  List<Week> get duplicateWeeks => hiddenDuplicates(allWeeks);
+
+  /// Regenerates the DEMO DATA: [months] of weekly demo entries for every
+  /// active employee, placed before the earliest real week.
+  ///
+  /// Idempotent. Every document is keyed by what it represents
+  /// ([demoWeekId] per week, the employee id per entry) and written with
+  /// `set(..., merge: true)`, so running this twice overwrites the first run
+  /// instead of adding a second copy of it. Weeks left over from a previous
+  /// run — dates no longer in the plan — are then deleted, which is what
+  /// makes "generating again replaces the previous demo weeks" true.
+  ///
+  /// Refuses to run while [legacyDemoWeeks] exist: those carry random ids
+  /// that this method cannot overwrite, so seeding on top of them would
+  /// duplicate them again. Run the cleanup first.
+  ///
+  /// Only documents tagged `mock: true` are ever created, modified or
+  /// deleted. Real weeks and their entries are never written to.
+  Future<int> seedMockData({int months = 5, DateTime? today}) async {
+    if (seeding.value) {
+      throw StateError('Demo data is already being generated.');
+    }
     final emps = activeEmployees;
     if (emps.isEmpty) {
       throw StateError('Add at least one active employee first.');
     }
-    await clearMockData();
-    final plan = planDemoWeeks(
-      weeks.where((w) => !w.isDemo).map((w) => w.startDate),
-      DateTime.now(),
-      months: months,
-    );
+    final legacy = legacyDemoWeeks;
+    if (legacy.isNotEmpty) {
+      throw StateError(
+        '${legacy.length} demo weeks from an older version still have random '
+        'document ids and cannot be replaced safely. Run the duplicate '
+        'cleanup (tools/dedupe_demo_weeks.mjs) first, then generate again.',
+      );
+    }
 
-    final ops = <void Function(WriteBatch)>[];
-    for (final (:start, :name, :progress) in plan) {
-      final weekRef = _weeksRef.doc();
-      ops.add((b) => b.set(weekRef, {
-            'name': name,
-            'startDate': Timestamp.fromDate(start),
-            'createdAt': FieldValue.serverTimestamp(),
-            'mock': true,
-          }));
-      for (final emp in emps) {
-        final v = demoValues(emp.name, start, progress: progress);
-        ops.add((b) => b.set(weekRef.collection('entries').doc(emp.id), {
-              'employeeName': emp.name,
-              for (final m in metrics) m.key: v[m.key] ?? 0,
-              'updatedAt': FieldValue.serverTimestamp(),
-            }));
+    seeding.value = true;
+    try {
+      final plan = planDemoWeeks(
+        allWeeks.where((w) => !w.isDemo).map((w) => w.startDate),
+        today ?? DateTime.now(),
+        months: months,
+      );
+
+      final ops = <void Function(WriteBatch)>[];
+      final planned = <String>{};
+      for (final (:start, :name, :progress) in plan) {
+        final weekRef = _weeksRef.doc(demoWeekId(start));
+        planned.add(weekRef.id);
+        ops.add((b) => b.set(
+              weekRef,
+              {
+                'name': name,
+                'startDate': Timestamp.fromDate(start),
+                'createdAt': FieldValue.serverTimestamp(),
+                'mock': true,
+              },
+              SetOptions(merge: true),
+            ));
+        for (final emp in emps) {
+          final v = demoValues(emp.name, start, progress: progress);
+          ops.add((b) => b.set(
+                weekRef.collection('entries').doc(emp.id),
+                {
+                  'employeeName': emp.name,
+                  for (final m in metrics) m.key: v[m.key] ?? 0,
+                  'updatedAt': FieldValue.serverTimestamp(),
+                },
+                SetOptions(merge: true),
+              ));
+        }
+      }
+      await _commitInChunks(ops);
+      await _pruneDemoData(planned, {for (final e in emps) e.id});
+      return plan.length;
+    } finally {
+      seeding.value = false;
+    }
+  }
+
+  /// Deletes demo weeks outside [plannedWeekIds], and entries inside the
+  /// planned weeks belonging to employees no longer in [plannedEmployeeIds]
+  /// (someone removed or deactivated since the last run).
+  ///
+  /// Reads the weeks collection rather than the cached list so a stale
+  /// snapshot cannot leave a duplicate behind. Documents without
+  /// `mock: true` are filtered out and never touched.
+  Future<void> _pruneDemoData(
+    Set<String> plannedWeekIds,
+    Set<String> plannedEmployeeIds,
+  ) async {
+    final demo = await _weeksRef.where('mock', isEqualTo: true).get();
+    for (final doc in demo.docs) {
+      if (doc.data()['mock'] != true) continue; // defensive
+      if (!plannedWeekIds.contains(doc.id)) {
+        await deleteWeek(doc.id);
+        continue;
+      }
+      final entries = await _entriesRef(doc.id).get();
+      final stale = [
+        for (final e in entries.docs)
+          if (!plannedEmployeeIds.contains(e.id)) e.reference,
+      ];
+      if (stale.isNotEmpty) {
+        await _commitInChunks([
+          for (final ref in stale) (WriteBatch b) => b.delete(ref),
+        ]);
       }
     }
-    await _commitInChunks(ops);
-    return plan.length;
   }
 
   /// Demo weeks holding values outside [demoRanges], i.e. left over from an
@@ -372,11 +480,11 @@ class Repository extends ChangeNotifier {
     return (employees: emps.length, weeks: wks.length, entries: entryCount);
   }
 
-  /// Firestore batches are capped at 500 writes.
+  /// Firestore batches are capped at 500 writes; 400 leaves headroom.
   Future<void> _commitInChunks(List<void Function(WriteBatch)> ops) async {
-    for (var i = 0; i < ops.length; i += 450) {
+    for (var i = 0; i < ops.length; i += 400) {
       final batch = _db.batch();
-      for (final op in ops.skip(i).take(450)) {
+      for (final op in ops.skip(i).take(400)) {
         op(batch);
       }
       await batch.commit();

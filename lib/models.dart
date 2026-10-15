@@ -142,33 +142,65 @@ List<Entry> sortEntries(List<Entry> entries, List<Employee> employees) {
 DateTime weekStartKey(Week w) =>
     DateTime(w.startDate.year, w.startDate.month, w.startDate.day);
 
-/// Whether [a] should be kept over [b] when both describe the same week.
-/// Real analytics beat generated demo data; then the oldest document wins, so
-/// a re-run that duplicated a week loses to the original; ties break on id so
-/// the result never depends on document order.
-bool _preferWeek(Week a, Week b) {
-  if (a.isDemo != b.isDemo) return !a.isDemo;
+/// Whether demo week [a] should be kept over demo week [b] when both start
+/// on the same day: the oldest document wins, so a re-run that duplicated a
+/// week loses to the original. Ties break on id, so the winner never depends
+/// on the order Firestore returns documents in.
+bool _preferDemoWeek(Week a, Week b) {
   final ca = a.createdAt, cb = b.createdAt;
   if ((ca == null) != (cb == null)) return ca != null;
   if (ca != null && cb != null && ca != cb) return ca.isBefore(cb);
   return a.id.compareTo(b.id) < 0;
 }
 
-/// One week per start date, oldest first.
+/// Orders weeks oldest first, breaking ties on id so the order is stable.
+int _byStartThenId(Week a, Week b) {
+  final c = a.startDate.compareTo(b.startDate);
+  return c != 0 ? c : a.id.compareTo(b.id);
+}
+
+/// One demo week per start date, oldest first.
 ///
-/// Duplicate week documents — e.g. from a demo seed that ran twice — would
+/// Duplicate demo documents — e.g. from a seed that ran twice — would
 /// otherwise be summed once each, inflating every monthly total while the
 /// weekly view (one bar per document) still looked correct.
+///
+/// Real weeks are never collapsed or hidden, even if two of them share a
+/// start date: real analytics are never silently dropped, so a genuine
+/// collision stays visible for someone to resolve. [hiddenDuplicates] and
+/// [collidingWeekStarts] report what needs attention.
 List<Week> dedupeWeeks(Iterable<Week> weeks) {
-  final kept = <DateTime, Week>{};
+  final kept = <Week>[];
+  final demo = <DateTime, Week>{};
   for (final w in weeks) {
+    if (!w.isDemo) {
+      kept.add(w);
+      continue;
+    }
     final key = weekStartKey(w);
-    final cur = kept[key];
-    if (cur == null || _preferWeek(w, cur)) kept[key] = w;
+    final cur = demo[key];
+    if (cur == null || _preferDemoWeek(w, cur)) demo[key] = w;
   }
-  return kept.values.toList()
-    ..sort((a, b) {
-      final c = a.startDate.compareTo(b.startDate);
-      return c != 0 ? c : a.id.compareTo(b.id);
-    });
+  return [...kept, ...demo.values]..sort(_byStartThenId);
+}
+
+/// The duplicate demo documents [dedupeWeeks] leaves out, oldest first.
+List<Week> hiddenDuplicates(Iterable<Week> weeks) {
+  final shown = {for (final w in dedupeWeeks(weeks)) w.id};
+  return [for (final w in weeks) if (!shown.contains(w.id)) w]
+    ..sort(_byStartThenId);
+}
+
+/// Start dates carrying more than one *visible* week, i.e. two real weeks, or
+/// a real week a demo week landed on. Nothing hides these, so they would be
+/// counted twice in a monthly total; the UI surfaces them instead.
+List<DateTime> collidingWeekStarts(Iterable<Week> weeks) {
+  final byStart = <DateTime, int>{};
+  for (final w in dedupeWeeks(weeks)) {
+    byStart.update(weekStartKey(w), (n) => n + 1, ifAbsent: () => 1);
+  }
+  return [
+    for (final MapEntry(key: start, value: n) in byStart.entries)
+      if (n > 1) start,
+  ]..sort();
 }

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:linkedin_dashboard/data/repository.dart';
 import 'package:linkedin_dashboard/models.dart';
@@ -66,12 +68,52 @@ void main() {
       ]);
     });
 
-    test('keeps the real week over a demo week on the same date', () {
+    test('never hides a real week, even on a demo start date', () {
       for (final order in [
         [_week('demo', DateTime(2026, 10, 5), demo: true), _week('real', DateTime(2026, 10, 5))],
         [_week('real', DateTime(2026, 10, 5)), _week('demo', DateTime(2026, 10, 5), demo: true)],
       ]) {
-        expect(dedupeWeeks(order).single.id, 'real');
+        // Real analytics are never dropped. The collision stays visible and
+        // is reported instead of being silently collapsed.
+        expect(dedupeWeeks(order).map((w) => w.id), containsAll(['real', 'demo']));
+        expect(collidingWeekStarts(order), [DateTime(2026, 10, 5)]);
+        expect(hiddenDuplicates(order), isEmpty);
+      }
+    });
+
+    test('two real weeks on one start date are both kept and reported', () {
+      final weeks = [
+        _week('r1', DateTime(2026, 10, 12)),
+        _week('r2', DateTime(2026, 10, 12)),
+      ];
+      expect(dedupeWeeks(weeks).length, 2);
+      expect(collidingWeekStarts(weeks), [DateTime(2026, 10, 12)]);
+    });
+
+    test('reports the duplicate demo documents it leaves out', () {
+      final weeks = [
+        _week('keep', DateTime(2026, 10, 5),
+            demo: true, createdAt: DateTime(2026, 10, 15, 6, 28)),
+        _week('drop', DateTime(2026, 10, 5),
+            demo: true, createdAt: DateTime(2026, 10, 15, 6, 31)),
+        _week('real', DateTime(2026, 10, 12)),
+      ];
+      expect(hiddenDuplicates(weeks).map((w) => w.id), ['drop']);
+      expect(collidingWeekStarts(weeks), isEmpty);
+    });
+
+    test('the winner is the same across 100 shuffles', () {
+      final weeks = [
+        for (var i = 0; i < 6; i++)
+          _week('dup_$i', DateTime(2026, 10, 5),
+              demo: true, createdAt: DateTime(2026, 10, 15, 6, 28 + i)),
+      ];
+      final rnd = math.Random(7);
+      for (var i = 0; i < 100; i++) {
+        final shuffled = [...weeks]..shuffle(rnd);
+        expect(dedupeWeeks(shuffled).single.id, 'dup_0');
+        expect(hiddenDuplicates(shuffled).map((w) => w.id),
+            ['dup_1', 'dup_2', 'dup_3', 'dup_4', 'dup_5']);
       }
     });
 

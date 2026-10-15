@@ -211,37 +211,54 @@ class _SettingsScreenState extends State<SettingsScreen> {
               style: TextStyle(color: AppColors.textSecondary),
             ),
             const SizedBox(height: 16),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                OutlinedButton.icon(
-                  onPressed: () async {
-                    var n = 0;
-                    final ok = await guard(context, () async {
-                      n = await Repository.instance.seedMockData();
-                    });
-                    if (ok && context.mounted) {
-                      showSuccess(context, 'Generated $n demo weeks');
-                    }
-                  },
-                  icon: const Icon(Icons.auto_awesome_outlined, size: 18),
-                  label: const Text('Generate / Reset Demo Data'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: () async {
-                    var n = 0;
-                    final ok = await guard(context, () async {
-                      n = await Repository.instance.clearMockData();
-                    });
-                    if (ok && context.mounted) {
-                      showSuccess(context, 'Removed $n demo weeks');
-                    }
-                  },
-                  icon: const Icon(Icons.delete_outline, size: 18),
-                  label: const Text('Remove Demo Data'),
-                ),
-              ],
+            // Both buttons are disabled while a run is in flight: two
+            // overlapping runs are what duplicated every demo week.
+            ValueListenableBuilder<bool>(
+              valueListenable: Repository.instance.seeding,
+              builder: (context, seeding, _) => Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: seeding
+                        ? null
+                        : () async {
+                            var n = 0;
+                            final ok = await guard(context, () async {
+                              n = await Repository.instance.seedMockData();
+                            });
+                            if (ok && context.mounted) {
+                              showSuccess(context, 'Generated $n demo weeks');
+                            }
+                          },
+                    icon: seeding
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.auto_awesome_outlined, size: 18),
+                    label: Text(seeding
+                        ? 'Generating…'
+                        : 'Generate / Reset Demo Data'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: seeding
+                        ? null
+                        : () async {
+                            var n = 0;
+                            final ok = await guard(context, () async {
+                              n = await Repository.instance.clearMockData();
+                            });
+                            if (ok && context.mounted) {
+                              showSuccess(context, 'Removed $n demo weeks');
+                            }
+                          },
+                    icon: const Icon(Icons.delete_outline, size: 18),
+                    label: const Text('Remove Demo Data'),
+                  ),
+                ],
+              ),
             ),
           ],
         ),

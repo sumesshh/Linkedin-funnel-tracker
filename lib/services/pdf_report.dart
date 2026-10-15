@@ -21,14 +21,19 @@ PdfColor _pdfColor(Metric m) => PdfColor.fromInt(m.color.toARGB32());
 
 /// Months (first day) that contain at least one week, newest first.
 List<DateTime> reportMonths(List<Week> weeks) {
-  final set = {for (final w in weeks) DateTime(w.startDate.year, w.startDate.month)};
+  final set = {
+    for (final w in dedupeWeeks(weeks))
+      DateTime(w.startDate.year, w.startDate.month),
+  };
   return set.toList()..sort((a, b) => b.compareTo(a));
 }
 
 /// Builds the monthly report for weeks whose start date falls in [month].
 Future<Uint8List> buildMonthlyReport(DateTime month) async {
   final repo = Repository.instance;
-  final weeks = repo.weeks
+  // Deduped: a week present twice would be added twice into the month
+  // summary, the per-employee table and the weekly chart.
+  final weeks = dedupeWeeks(repo.weeks)
       .where((w) =>
           w.startDate.year == month.year && w.startDate.month == month.month)
       .toList();

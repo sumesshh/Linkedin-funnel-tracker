@@ -17,6 +17,10 @@ String toCsv(List<List<Object?>> rows) =>
 
 List<String> get _metricHeaders => [for (final m in metrics) m.label];
 
+/// The weeks every export is built from: one per start date, so a duplicated
+/// week document can never be counted twice in a summary row.
+List<Week> get _weeks => dedupeWeeks(Repository.instance.weeks);
+
 /// Value of the trailing "Data" column: generated demo rows vs real numbers.
 const demoLabel = 'DEMO DATA', actualLabel = 'Actual';
 String _source(Week w) => w.isDemo ? demoLabel : actualLabel;
@@ -26,7 +30,7 @@ List<List<Object?>> weeklyTotalsRows() {
   final repo = Repository.instance;
   return [
     ['Week', 'Start Date', ..._metricHeaders, 'Data'],
-    for (final w in repo.weeks)
+    for (final w in _weeks)
       [
         w.name,
         day.format(w.startDate),
@@ -40,7 +44,7 @@ List<List<Object?>> weeklyTotalsRows() {
 /// the month's weeks are generated DEMO DATA.
 List<List<Object?>> monthlyTotalsRows() {
   final repo = Repository.instance;
-  int demoWeeks(DateTime month) => repo.weeks
+  int demoWeeks(DateTime month) => _weeks
       .where((w) =>
           w.isDemo &&
           w.startDate.year == month.year &&
@@ -63,7 +67,7 @@ List<List<Object?>> rawRows() {
   final repo = Repository.instance;
   return [
     ['Week', 'Start Date', 'Month', 'Employee', ..._metricHeaders, 'Data'],
-    for (final w in repo.weeks)
+    for (final w in _weeks)
       for (final e in repo.entriesFor(w.id))
         [
           w.name,

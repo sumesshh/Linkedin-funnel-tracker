@@ -132,3 +132,43 @@ List<Entry> sortEntries(List<Entry> entries, List<Employee> employees) {
       return a.employeeName.compareTo(b.employeeName);
     });
 }
+
+/// The local calendar day a week starts on. This — not the document id — is a
+/// week's identity: two documents sharing a start date are the same week.
+///
+/// Built in local time on purpose. Start dates are stored as local midnight
+/// (IST midnight serialises as 18:30Z the day before), so reading the UTC
+/// parts would put a week in the wrong day, and sometimes the wrong month.
+DateTime weekStartKey(Week w) =>
+    DateTime(w.startDate.year, w.startDate.month, w.startDate.day);
+
+/// Whether [a] should be kept over [b] when both describe the same week.
+/// Real analytics beat generated demo data; then the oldest document wins, so
+/// a re-run that duplicated a week loses to the original; ties break on id so
+/// the result never depends on document order.
+bool _preferWeek(Week a, Week b) {
+  if (a.isDemo != b.isDemo) return !a.isDemo;
+  final ca = a.createdAt, cb = b.createdAt;
+  if ((ca == null) != (cb == null)) return ca != null;
+  if (ca != null && cb != null && ca != cb) return ca.isBefore(cb);
+  return a.id.compareTo(b.id) < 0;
+}
+
+/// One week per start date, oldest first.
+///
+/// Duplicate week documents — e.g. from a demo seed that ran twice — would
+/// otherwise be summed once each, inflating every monthly total while the
+/// weekly view (one bar per document) still looked correct.
+List<Week> dedupeWeeks(Iterable<Week> weeks) {
+  final kept = <DateTime, Week>{};
+  for (final w in weeks) {
+    final key = weekStartKey(w);
+    final cur = kept[key];
+    if (cur == null || _preferWeek(w, cur)) kept[key] = w;
+  }
+  return kept.values.toList()
+    ..sort((a, b) {
+      final c = a.startDate.compareTo(b.startDate);
+      return c != 0 ? c : a.id.compareTo(b.id);
+    });
+}

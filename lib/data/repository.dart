@@ -24,7 +24,14 @@ class Repository extends ChangeNotifier {
       _weeksRef.doc(weekId).collection('entries');
 
   List<Employee> employees = [];
-  List<Week> weeks = []; // chronological
+
+  /// Chronological, one week per start date — what every screen, export and
+  /// report reads. Duplicate documents for the same week are collapsed by
+  /// [dedupeWeeks]; [allWeeks] still holds them for cleanup and diagnostics.
+  List<Week> weeks = [];
+
+  /// Every week document exactly as stored, duplicates included.
+  List<Week> allWeeks = [];
   Map<String, List<Entry>> entriesByWeek = {};
   Object? error;
 
@@ -41,7 +48,8 @@ class Repository extends ChangeNotifier {
       notifyListeners();
     }, onError: _onError));
     _subs.add(_weeksRef.orderBy('startDate').snapshots().listen((s) {
-      weeks = s.docs.map(Week.fromDoc).toList();
+      allWeeks = s.docs.map(Week.fromDoc).toList();
+      weeks = dedupeWeeks(allWeeks);
       _weeksLoaded = true;
       notifyListeners();
     }, onError: _onError));
@@ -87,10 +95,14 @@ class Repository extends ChangeNotifier {
 
   /// All-employee totals per calendar month (a week counts toward the month
   /// its start date falls in), oldest first.
+  ///
+  /// Deduped again here rather than trusting [weeks]: a month that counted one
+  /// week twice would disagree with the weekly view, which is how the October
+  /// Reach total reached 13,900 against an actual 8,896.
   List<({DateTime month, int weekCount, Map<String, int> totals})>
       get monthlyTotals {
     final byMonth = <DateTime, List<Week>>{};
-    for (final w in weeks) {
+    for (final w in dedupeWeeks(weeks)) {
       (byMonth[DateTime(w.startDate.year, w.startDate.month)] ??= []).add(w);
     }
     final months = byMonth.keys.toList()..sort();

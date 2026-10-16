@@ -87,12 +87,16 @@ class ManageEmployeesScreen extends StatelessWidget {
                     children: [
                       ReorderableDragStartListener(
                         index: i,
-                        child: const MouseRegion(
-                          cursor: SystemMouseCursors.grab,
-                          child: Padding(
-                            padding: EdgeInsets.all(12),
-                            child: Icon(Icons.drag_indicator,
-                                color: AppColors.textSecondary),
+                        child: Semantics(
+                          label: 'Reorder ${e.name}',
+                          container: true,
+                          child: const MouseRegion(
+                            cursor: SystemMouseCursors.grab,
+                            child: Padding(
+                              padding: EdgeInsets.all(12),
+                              child: Icon(Icons.drag_indicator,
+                                  color: AppColors.textSecondary),
+                            ),
                           ),
                         ),
                       ),
@@ -117,25 +121,35 @@ class ManageEmployeesScreen extends StatelessWidget {
                           ],
                         ),
                       ),
-                      Tooltip(
-                        message: e.isActive
-                            ? 'Mark inactive (hide from Data Entry)'
-                            : 'Mark active',
-                        child: Switch(
-                          value: e.isActive,
-                          activeTrackColor: AppColors.success,
-                          onChanged: (v) => guard(
-                              context, () => _repo.setEmployeeActive(e.id, v)),
+                      // The switch carries only its on/off state, so name it
+                      // after the employee; merging lands that name and the
+                      // tooltip on the switch node instead of a wrapper.
+                      MergeSemantics(
+                        child: Semantics(
+                          label: '${e.name} active',
+                          child: Tooltip(
+                            message: e.isActive
+                                ? 'Mark inactive (hide from Data Entry)'
+                                : 'Mark active',
+                            child: Switch(
+                              value: e.isActive,
+                              activeTrackColor: AppColors.success,
+                              onChanged: (v) => guard(context,
+                                  () => _repo.setEmployeeActive(e.id, v)),
+                            ),
+                          ),
                         ),
                       ),
+                      // Named after the row they belong to: one list can hold
+                      // a dozen otherwise identical icon buttons.
                       IconButton(
-                        tooltip: 'Rename',
+                        tooltip: 'Rename ${e.name}',
                         icon: const Icon(Icons.edit_outlined,
                             color: AppColors.textSecondary),
                         onPressed: () => _rename(context, e),
                       ),
                       IconButton(
-                        tooltip: 'Remove',
+                        tooltip: 'Remove ${e.name}',
                         icon: const Icon(Icons.delete_outline,
                             color: AppColors.error),
                         onPressed: () => _delete(context, e),

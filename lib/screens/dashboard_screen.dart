@@ -5,6 +5,7 @@ import '../data/repository.dart';
 import '../models.dart';
 import '../services/csv_export.dart';
 import '../theme.dart';
+import '../widgets/breakdown_table.dart';
 import '../widgets/common.dart';
 import '../widgets/metric_chart.dart';
 
@@ -69,11 +70,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             width: 18,
                             height: 18,
                             child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Colors.white),
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
                           )
                         : const Icon(Icons.refresh, size: 18),
                     label: Text(
-                        seeding ? 'Regenerating…' : 'Regenerate demo data'),
+                      seeding ? 'Regenerating…' : 'Regenerate demo data',
+                    ),
                   ),
                 ),
               ],
@@ -121,20 +125,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 : exportWeeklyCsv(),
                             success: 'CSV downloaded',
                           ),
-                          child: Text(_monthly
-                              ? 'Summary — totals per month'
-                              : 'Summary — totals per week'),
+                          child: Text(
+                            _monthly
+                                ? 'Summary — totals per month'
+                                : 'Summary — totals per week',
+                          ),
                         ),
                         MenuItemButton(
-                          leadingIcon:
-                              const Icon(Icons.people_outline, size: 18),
+                          leadingIcon: const Icon(
+                            Icons.people_outline,
+                            size: 18,
+                          ),
                           onPressed: () => guard(
                             context,
                             () async => exportRawCsv(),
                             success: 'CSV downloaded',
                           ),
                           child: const Text(
-                              'Employee-level — one row per employee per week'),
+                            'Employee-level — one row per employee per week',
+                          ),
                         ),
                       ],
                       builder: (context, menu, _) => OutlinedButton.icon(
@@ -167,12 +176,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   labels: [for (final r in monthly) monthLabel.format(r.month)],
                   values: [for (final r in monthly) r.totals],
                   period: ChartPeriod.monthly,
+                  description: 'LinkedIn monthly totals, all employees',
+                  unit: 'month',
                 )
               else
                 MetricLineChart(
                   labels: [for (final w in weeks) w.name],
                   values: [for (final w in weeks) repo.totalsFor(w.id)],
                   period: ChartPeriod.weekly,
+                  description: 'LinkedIn weekly totals, all employees',
+                  unit: 'week',
                 ),
             ],
           ),
@@ -202,7 +215,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 )
               else ...[
                 if (weeks.firstWhere((w) => w.id == _weekId).isDemo) ...[
-                  const _DemoNotice('This week contains generated sample values.'),
+                  const _DemoNotice(
+                    'This week contains generated sample values.',
+                  ),
                   const SizedBox(height: 16),
                 ],
                 _Breakdown(entries: repo.entriesFor(_weekId!)),
@@ -359,9 +374,10 @@ class _Breakdown extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        isMobile(context)
-            ? _MobileBreakdown(entries: entries, totals: totals)
-            : BreakdownTable(entries: entries, totals: totals),
+        // BreakdownTable measures itself and drops to the card layout when
+        // the columns would not fit, so there is no breakpoint to keep in
+        // sync with the number of metrics.
+        BreakdownTable(entries: entries, totals: totals),
         const SizedBox(height: 32),
         const Text(
           'Employee-wise comparison',
@@ -375,148 +391,9 @@ class _Breakdown extends StatelessWidget {
         MetricLineChart(
           labels: [for (final e in entries) e.employeeName],
           values: [for (final e in entries) e.values],
+          description: 'Employee-wise comparison for the selected week',
+          unit: 'employee',
         ),
-      ],
-    );
-  }
-}
-
-class BreakdownTable extends StatelessWidget {
-  const BreakdownTable({
-    super.key,
-    required this.entries,
-    required this.totals,
-  });
-  final List<Entry> entries;
-  final Map<String, int> totals;
-
-  @override
-  Widget build(BuildContext context) {
-    TableRow row(
-      String name,
-      Map<String, int> v, {
-      bool header = false,
-      bool bold = false,
-    }) {
-      final style = TextStyle(
-        fontSize: 13,
-        fontWeight: header || bold ? FontWeight.w600 : FontWeight.w400,
-        color: header ? AppColors.textSecondary : AppColors.textPrimary,
-      );
-      Widget cell(String t, {bool left = false}) => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        child: Text(
-          t,
-          style: style,
-          textAlign: left ? TextAlign.left : TextAlign.right,
-        ),
-      );
-      return TableRow(
-        decoration: BoxDecoration(
-          color: header ? AppColors.card : Colors.white,
-          border: const Border(bottom: BorderSide(color: AppColors.divider)),
-        ),
-        children: [
-          cell(name, left: true),
-          for (final m in metrics) cell(header ? m.short : fmt(v[m.key] ?? 0)),
-        ],
-      );
-    }
-
-    return LayoutBuilder(
-      builder: (context, c) {
-        return SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(minWidth: c.maxWidth),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Table(
-                defaultColumnWidth: const IntrinsicColumnWidth(),
-                columnWidths: const {0: IntrinsicColumnWidth(flex: 2)},
-                defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-                children: [
-                  row('Employee Name', const {}, header: true),
-                  for (final e in entries) row(e.employeeName, e.values),
-                  row('Total', totals, bold: true),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _MobileBreakdown extends StatelessWidget {
-  const _MobileBreakdown({required this.entries, required this.totals});
-  final List<Entry> entries;
-  final Map<String, int> totals;
-
-  @override
-  Widget build(BuildContext context) {
-    Widget card(
-      String name,
-      Map<String, int> v, {
-      bool total = false,
-    }) => Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: total ? AppColors.card : Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.cardBorder),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            name,
-            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
-          ),
-          const SizedBox(height: 10),
-          GridView.count(
-            crossAxisCount: 2,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            childAspectRatio: 6,
-            children: [
-              for (final m in metrics)
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        m.short,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.only(right: 12),
-                      child: Text(
-                        fmt(v[m.key] ?? 0),
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: total ? FontWeight.w700 : FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-            ],
-          ),
-        ],
-      ),
-    );
-
-    return Column(
-      children: [
-        for (final e in entries) card(e.employeeName, e.values),
-        card('Total', totals, total: true),
       ],
     );
   }

@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 
 import 'data/repository.dart';
 import 'firebase_options.dart';
@@ -11,6 +12,11 @@ const _useEmulator = bool.fromEnvironment('USE_EMULATOR');
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Flutter web only builds the semantics tree once something asks for it,
+  // so screen readers and auditing tools see an empty page until the hidden
+  // "Enable accessibility" button is pressed. Hold a handle for the whole
+  // run of the app so the tree is there from the first frame.
+  SemanticsBinding.instance.ensureSemantics();
   Object? startupError;
   if (_useEmulator) {
     // Local testing: `firebase emulators:start --only firestore` then

@@ -205,7 +205,10 @@ class _EmployeeCard extends StatelessWidget {
                 for (final m in metrics)
                   SizedBox(
                     width: w,
-                    child: _MetricField(metric: m, controller: controllers[m.key]!),
+                    child: _MetricField(
+                        metric: m,
+                        controller: controllers[m.key]!,
+                        employeeName: employee.name),
                   ),
               ],
             );
@@ -217,9 +220,16 @@ class _EmployeeCard extends StatelessWidget {
 }
 
 class _MetricField extends StatelessWidget {
-  const _MetricField({required this.metric, required this.controller});
+  const _MetricField(
+      {required this.metric,
+      required this.controller,
+      required this.employeeName});
   final Metric metric;
   final TextEditingController controller;
+
+  /// Only for the field's screen-reader name: eight identically shaped boxes
+  /// repeat per employee, so "Likes" alone does not say which card it is in.
+  final String employeeName;
 
   @override
   Widget build(BuildContext context) {
@@ -232,24 +242,34 @@ class _MetricField extends StatelessWidget {
             style:
                 const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
         const SizedBox(height: 6),
-        TextFormField(
-          controller: controller,
-          keyboardType: TextInputType.number,
-          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-          textInputAction: TextInputAction.next,
-          onTap: () {
-            // Select the default "0" so typing replaces it.
-            if (controller.text == '0') {
-              controller.selection =
-                  TextSelection(baseOffset: 0, extentOffset: 1);
-            }
-          },
-          validator: (v) {
-            final n = int.tryParse((v ?? '').trim().isEmpty ? '0' : v!.trim());
-            if (n == null) return 'Numbers only';
-            if (n < 0) return 'No negatives';
-            return null;
-          },
+        // The label above is a plain Text, not part of the field's
+        // decoration, so the input would otherwise reach assistive tech
+        // unnamed. MergeSemantics puts the name on the input node itself
+        // rather than on a wrapper around it.
+        MergeSemantics(
+          child: Semantics(
+            label: '${metric.label} for $employeeName',
+            child: TextFormField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              textInputAction: TextInputAction.next,
+              onTap: () {
+                // Select the default "0" so typing replaces it.
+                if (controller.text == '0') {
+                  controller.selection =
+                      TextSelection(baseOffset: 0, extentOffset: 1);
+                }
+              },
+              validator: (v) {
+                final n =
+                    int.tryParse((v ?? '').trim().isEmpty ? '0' : v!.trim());
+                if (n == null) return 'Numbers only';
+                if (n < 0) return 'No negatives';
+                return null;
+              },
+            ),
+          ),
         ),
       ],
     );

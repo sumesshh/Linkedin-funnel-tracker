@@ -150,19 +150,23 @@ class _AppShellState extends State<AppShell> {
       groupAlignment: -0.85,
       leading: Padding(
         padding: const EdgeInsets.only(top: 12, bottom: 8),
-        child: Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: AppColors.primary,
-            borderRadius: BorderRadius.circular(10),
+        // Decorative "in" monogram; without this a screen reader reads out
+        // the word "in" before the navigation items.
+        child: ExcludeSemantics(
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: AppColors.primary,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            alignment: Alignment.center,
+            child: const Text('in',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 18)),
           ),
-          alignment: Alignment.center,
-          child: const Text('in',
-              style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 18)),
         ),
       ),
       destinations: [

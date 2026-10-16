@@ -173,6 +173,27 @@ class Repository extends ChangeNotifier {
               }),
       ]);
 
+  /// Writes the edited numbers for one week's existing rows, keyed by
+  /// employee id.
+  ///
+  /// Unlike [saveEntries] this takes the rows as they are stored rather than
+  /// a list of [Employee]s, so a row whose employee has since been deleted —
+  /// the history stays in the week — is still editable. Merged, so any field
+  /// this app does not know about survives the write.
+  Future<void> saveEntryValues(String weekId, Iterable<Entry> entries) =>
+      _commitInChunks([
+        for (final e in entries)
+          (WriteBatch b) => b.set(
+                _entriesRef(weekId).doc(e.employeeId),
+                {
+                  'employeeName': e.employeeName,
+                  for (final m in metrics) m.key: e[m.key],
+                  'updatedAt': FieldValue.serverTimestamp(),
+                },
+                SetOptions(merge: true),
+              ),
+      ]);
+
   // ------------------------------------------------------------ employees
 
   Future<void> addEmployee(String name) {

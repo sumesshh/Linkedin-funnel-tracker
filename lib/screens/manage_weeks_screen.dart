@@ -6,7 +6,7 @@ import '../models.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/week_dialog.dart';
-import 'dashboard_screen.dart' show BreakdownTable;
+import '../widgets/week_entries_dialog.dart';
 
 class ManageWeeksScreen extends StatelessWidget {
   const ManageWeeksScreen({super.key});
@@ -21,35 +21,9 @@ class ManageWeeksScreen extends StatelessWidget {
     if (id != null && context.mounted) showSuccess(context, 'Week updated');
   }
 
+  /// Opens the week's breakdown with every number editable in place.
   void _view(BuildContext context, Week week) {
-    final entries = Repository.instance.entriesFor(week.id);
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: Colors.white,
-        title: Text(week.name),
-        content: SizedBox(
-          width: 900,
-          child: entries.isEmpty
-              ? const Text(
-                  'No data entered for this week yet.',
-                  style: TextStyle(color: AppColors.textSecondary),
-                )
-              : SingleChildScrollView(
-                  child: BreakdownTable(
-                    entries: entries,
-                    totals: sumEntries(entries),
-                  ),
-                ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
+    showWeekEntriesDialog(context, week);
   }
 
   Future<void> _delete(BuildContext context, Week week) async {
@@ -153,8 +127,10 @@ class ManageWeeksScreen extends StatelessWidget {
                           ],
                         ),
                       ),
+                      // Named after the week, so a screen reader does not
+                      // read out a column of identical "Rename" buttons.
                       IconButton(
-                        tooltip: 'Rename',
+                        tooltip: 'Rename ${w.name}',
                         icon: const Icon(
                           Icons.edit_outlined,
                           color: AppColors.textSecondary,
@@ -162,7 +138,7 @@ class ManageWeeksScreen extends StatelessWidget {
                         onPressed: () => _edit(context, w),
                       ),
                       IconButton(
-                        tooltip: 'Delete',
+                        tooltip: 'Delete ${w.name}',
                         icon: const Icon(
                           Icons.delete_outline,
                           color: AppColors.error,
